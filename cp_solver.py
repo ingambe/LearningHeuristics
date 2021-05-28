@@ -5,14 +5,14 @@ from math import floor
 
 from ortools.sat.python import cp_model
 
-from presolver import *
+from instance_reader import *
 
 
 def hours_to_minutes(hours):
     return int(floor(hours * 60))
 
 
-def solve_with_cp(task_list: List[Task], machine_list: List[Machine], job_list: List[Job], setup, cm: CapacityManager, obj_dv=0):
+def solve_with_cp(task_list: List[Task], machine_list: List[Machine], job_list: List[Job], setup, cm: CapacityManager2, obj_dv=0):
     from time import time
     start = time()
     job_list = sorted(job_list, key=lambda j: j.deadline)
@@ -209,7 +209,7 @@ def solve_with_cp(task_list: List[Task], machine_list: List[Machine], job_list: 
     else:
         print(f"Status is {status}")
 
-    from presolver import perf_measures
+    from instance_reader import perf_measures
     p = perf_measures(job_list)
     project_weight = {a['project']: a['jobWeight'] for a in setup['objective']['projects']}
     default_job_weight = setup['objective']['jobWeight']

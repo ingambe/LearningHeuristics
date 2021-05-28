@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from pulp import *
 
-from presolver import *
+from instance_reader import *
 
 
 class GurobiSolver:
@@ -77,7 +77,7 @@ class SolverInterface:
         return value(self.m.ObjBound)
 
 
-def solve_with_lp(task_list: List[Task], machine_list: List[Machine], job_list: List[Job], setup, cm: CapacityManager, solver_backend=None, obj_dv=0):
+def solve_with_lp(task_list: List[Task], machine_list: List[Machine], job_list: List[Job], setup, cm: CapacityManager2, solver_backend=None, obj_dv=0):
     from time import time
     start = time()
     solver = GurobiSolver()
