@@ -29,7 +29,7 @@ googleapis-common-protos==1.53.0
 gpustat==0.6.0
 grpcio==1.36.1
 gunicorn==20.1.0
-gurobipy==9.1.1
+gurobipy
 hiredis==1.1.0
 idna==2.10
 itsdangerous==1.1.0

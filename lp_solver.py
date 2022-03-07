@@ -170,7 +170,6 @@ def solve_with_lp(task_list: List[Task], machine_list: List[Machine], job_list: 
                 # task.result_processing_day = t
                 machine_days[t][task.machine.id] += task.length
 
-    from presolver import perf_measures
     p = perf_measures(job_list)
     p['obj'] = solver.get_objective_value()
     print('Solve objective', solver.get_objective_value())
