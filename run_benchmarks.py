@@ -11,12 +11,12 @@ from instance_reader import CapacityManager2, load_presolved
 solvers = [
     "greedy_solver:solve_with_greedy",
     #'lp_solver:solve_with_lp',
-    #'cp_solver:solve_with_cp',
+    'cp_solver:solve_with_cp',
     "beam_search:beam_search",
 ]
 
 time_limits = [
-    3600,
+    600,
 ]
 
 weeks = [
