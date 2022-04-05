@@ -8,19 +8,37 @@ import numpy as np
 
 from torch.nn.utils.convert_parameters import _check_param_device
 
-def _compute_job_priority(nb_day_deadline, nb_day_left, job_weights, days_outside, coupling_days, task_length, network):
+
+def _compute_job_priority(
+    nb_day_deadline,
+    nb_day_left,
+    job_weights,
+    days_outside,
+    coupling_days,
+    task_length,
+    network,
+):
     with torch.no_grad():
         nb_jobs = len(nb_day_deadline)
         # normalize
         nb_day_deadline = (nb_day_deadline - torch.min(nb_day_deadline)) / max(
-            torch.max(nb_day_deadline) - torch.min(nb_day_deadline), 1)
-        nb_day_left = (nb_day_left - torch.min(nb_day_left)) / max(torch.max(nb_day_left) - torch.min(nb_day_left), 1)
-        days_outside = (days_outside - torch.min(days_outside)) / max(torch.max(days_outside) - torch.min(days_outside),
-                                                                      1)
+            torch.max(nb_day_deadline) - torch.min(nb_day_deadline), 1
+        )
+        nb_day_left = (nb_day_left - torch.min(nb_day_left)) / max(
+            torch.max(nb_day_left) - torch.min(nb_day_left), 1
+        )
+        days_outside = (days_outside - torch.min(days_outside)) / max(
+            torch.max(days_outside) - torch.min(days_outside), 1
+        )
         coupling_days = (coupling_days - torch.min(coupling_days)) / max(
-            torch.max(coupling_days) - torch.min(coupling_days), 1)
-        job_weights = (job_weights - torch.min(job_weights)) / max(torch.max(job_weights) - torch.min(job_weights), 1)
-        task_length = (task_length - torch.min(task_length)) / max(torch.max(task_length) - torch.min(task_length), 1)
+            torch.max(coupling_days) - torch.min(coupling_days), 1
+        )
+        job_weights = (job_weights - torch.min(job_weights)) / max(
+            torch.max(job_weights) - torch.min(job_weights), 1
+        )
+        task_length = (task_length - torch.min(task_length)) / max(
+            torch.max(task_length) - torch.min(task_length), 1
+        )
         # view
         nb_day_deadline = nb_day_deadline.view(nb_jobs, 1)
         nb_day_left = nb_day_left.view(nb_jobs, 1)
@@ -29,18 +47,27 @@ def _compute_job_priority(nb_day_deadline, nb_day_left, job_weights, days_outsid
         days_outside = days_outside.view(nb_jobs, 1)
         task_length = task_length.view(nb_jobs, 1)
         input_tensor = torch.hstack(
-            (nb_day_deadline, nb_day_left, job_weights, days_outside, coupling_days, task_length))
+            (
+                nb_day_deadline,
+                nb_day_left,
+                job_weights,
+                days_outside,
+                coupling_days,
+                task_length,
+            )
+        )
         score = network(input_tensor)
         return score.view(-1)
 
+
 def layer_init(layer, bias_const=0.0):
-    #torch.nn.init.orthogonal_(layer.weight, math.sqrt(2))
+    # torch.nn.init.orthogonal_(layer.weight, math.sqrt(2))
     if layer.bias is not None:
         torch.nn.init.constant_(layer.bias, bias_const)
     return layer
 
-class Network(nn.Module):
 
+class Network(nn.Module):
     def __init__(self, imput_dim, output_dim):
         super(Network, self).__init__()
         self.ln1 = layer_init(nn.Linear(imput_dim, 32))
@@ -82,8 +109,9 @@ class Network(nn.Module):
         """
         # Ensure vec of type Tensor
         if not isinstance(vec, torch.Tensor):
-            raise TypeError('expected torch.Tensor, but got: {}'
-                            .format(torch.typename(vec)))
+            raise TypeError(
+                "expected torch.Tensor, but got: {}".format(torch.typename(vec))
+            )
         # Flag for the device where the parameter is located
         param_device = None
 
@@ -97,7 +125,7 @@ class Network(nn.Module):
                 # The length of the parameter
                 num_param = param.numel()
                 # Slice the vector, reshape it, and replace the old data of the parameter
-                param.data = vec[pointer:pointer + num_param].view_as(param).data
+                param.data = vec[pointer : pointer + num_param].view_as(param).data
 
                 # Increment the pointer
                 pointer += num_param
