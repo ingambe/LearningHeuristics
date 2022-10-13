@@ -14,6 +14,7 @@ from math import floor
 from ortools.sat.python import cp_model
 from torch.utils.data import TensorDataset, DataLoader
 
+from NetworkES import Network
 from instance_reader import *
 
 from instance_reader import Task, Machine, Job, CapacityManager2, perf_measures, PenaltyManager
@@ -401,7 +402,6 @@ def generate_data(
     print(
         f"number of jobs to allocates {number_jobs}, total of {number_tasks} tasks to perform on {number_machines} machines"
     )
-    nb_features = 6
 
     days_allocation = solve_with_cp_get_result(job_list, setup, cm)
     result = one_pop_iter(
@@ -626,25 +626,8 @@ def one_pop_iter(
         dataset = TensorDataset(all_reps, all_padded_labels, mask)
         dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    class SmallNetwork(nn.Module):
 
-        def __init__(self):
-            super().__init__()
-            self.ln_first = nn.Linear(6, 8)
-            self.att = nn.MultiheadAttention(8, 1, batch_first=True)
-            self.ln_second = nn.Linear(8, 16)
-            self.ln_third = nn.Linear(16, 1)
-            self.activation = nn.ReLU()
-
-        def forward(self, input, mask):
-            input = self.activation(self.ln_first(input))
-            # attention with masking using mask
-            input, _ = self.att(input, input, input, key_padding_mask=~mask)
-            input = self.activation(self.ln_second(input))
-            input = self.ln_third(input)
-            return input.squeeze(2)
-
-    ex_nn = SmallNetwork()
+    ex_nn = Network(6, 1)
     optimizer = torch.optim.Adam(ex_nn.parameters(), lr=0.001)
     # criterion multi label cross entropy, higher weight for positive label
     criterion = nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.tensor([10.0]))
@@ -655,7 +638,7 @@ def one_pop_iter(
         for batch in dataloader:
             optimizer.zero_grad()
             reps, labels, mask = batch
-            output = ex_nn(reps, mask)
+            output = ex_nn(reps).squeeze(2)
             loss = criterion(output, labels.float())
             loss = (loss * mask.float()).sum() / mask.float().sum()
             loss.backward()
@@ -667,6 +650,7 @@ def one_pop_iter(
                 acc += (pred == labels).float().sum() / mask.float().sum()
                 losses += loss.item()
         print(f'epoch {epoch} loss {losses / iter} acc {acc / iter}')
-
+    # save the model
+    torch.save(ex_nn.state_dict(), 'pretrained.pt')
     return all_reps, all_padded_labels, mask
 
