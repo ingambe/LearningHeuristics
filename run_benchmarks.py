@@ -11,16 +11,17 @@ from instance_reader import CapacityManager2, load_presolved
 solvers = [
     "greedy_solver:solve_with_greedy",
     #'lp_solver:solve_with_lp',
-    'cp_solver:solve_with_cp',
-    "beam_search:beam_search",
+    #'cp_solver:solve_with_cp',
+    #"beam_search:beam_search",
+    "train_classification:generate_data",
 ]
 
 time_limits = [
-    600,
+    15,
 ]
 
 weeks = [
-    6,
+    2,
 ]
 
 ref_solver = "greedy_solver:solve_with_greedy"
