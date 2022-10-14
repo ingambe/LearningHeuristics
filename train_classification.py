@@ -655,8 +655,8 @@ def one_pop_iter(
                 tp = ((pred == 1) & (labels == 1)).float().sum()
                 fp = ((pred == 1) & (labels == 0)).float().sum()
                 fn = ((pred == 0) & (labels == 1)).float().sum()
-                total_precision += tp / (tp + fp)
-                total_recall += tp / (tp + fn)
+                total_precision += tp / min((tp + fp), 1)
+                total_recall += tp / min((tp + fn), 1)
         print(f'epoch {epoch} loss {losses / iter} acc {acc / iter} precision {total_precision / iter} recall {total_recall / iter}')
     # save the model
     torch.save(ex_nn.state_dict(), 'pretrained.pt')
