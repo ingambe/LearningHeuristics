@@ -503,10 +503,10 @@ def one_pop_iter(
                     y_to_pred = torch.zeros((job_to_allocate_this_step_machine.shape[0],), dtype=torch.bool)
                     y_to_pred[job_to_allocate_this_step_machine == get_biject_to_allocate] = True
                     all_labels.append(y_to_pred)
-                    print('-' * 10)
-                    print(f'shape of labels {y_to_pred.shape}')
-                    print(f'shape of representation {job_representation.shape}')
-                    print(f'-' * 10)
+                    #print('-' * 10)
+                    #print(f'shape of labels {y_to_pred.shape}')
+                    #print(f'shape of representation {job_representation.shape}')
+                    #print(f'-' * 10)
                     for i in get_biject_to_allocate:
                         job_object = all_jobs[i]
                         # check if compatible
@@ -620,9 +620,9 @@ def one_pop_iter(
             all_reps[i, :x.shape[0], :] = x
             all_padded_labels[i, :y.shape[0]] = y
             mask[i, :x.shape[0]] = True
-        print(f'all_reps {all_reps.shape}')
-        print(f'all_padded_labels {all_padded_labels.shape}')
-        print(f'mask {mask.shape}')
+        #print(f'all_reps {all_reps.shape}')
+        #print(f'all_padded_labels {all_padded_labels.shape}')
+        #print(f'mask {mask.shape}')
         dataset = TensorDataset(all_reps, all_padded_labels, mask)
         dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
@@ -634,6 +634,8 @@ def one_pop_iter(
     for epoch in range(100):
         acc = 0
         losses = 0
+        total_precision = 0
+        total_recall = 0
         iter = 0
         for batch in dataloader:
             optimizer.zero_grad()
@@ -649,7 +651,13 @@ def one_pop_iter(
                 pred = torch.sigmoid(output) > 0.5
                 acc += (pred == labels).float().sum() / mask.float().sum()
                 losses += loss.item()
-        print(f'epoch {epoch} loss {losses / iter} acc {acc / iter}')
+                # compute the precision and recall
+                tp = ((pred == 1) & (labels == 1)).float().sum()
+                fp = ((pred == 1) & (labels == 0)).float().sum()
+                fn = ((pred == 0) & (labels == 1)).float().sum()
+                total_precision += tp / (tp + fp)
+                total_recall += tp / (tp + fn)
+        print(f'epoch {epoch} loss {losses / iter} acc {acc / iter} precision {total_precision / iter} recall {total_recall / iter}')
     # save the model
     torch.save(ex_nn.state_dict(), 'pretrained.pt')
     return all_reps, all_padded_labels, mask

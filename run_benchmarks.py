@@ -12,8 +12,8 @@ solvers = [
     "greedy_solver:solve_with_greedy",
     #'lp_solver:solve_with_lp',
     #'cp_solver:solve_with_cp',
-    "beam_search:beam_search",
-    #"train_classification:generate_data",
+    #"beam_search:beam_search",
+    "train_classification:generate_data",
 ]
 
 time_limits = [
@@ -63,6 +63,7 @@ def main():
         results = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: [])))
 
         for instance in range(1, 6 + 1):
+            output.write("******************\n")
             for week in weeks:
                 for time_limit in time_limits:
                     fn = f"instance_{week}week_{instance}.json"
