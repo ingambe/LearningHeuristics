@@ -216,7 +216,6 @@ def get_min_obj(
             j.min_obj_has_delay = 0
 
     # consider machine downtime
-
     p = {}
     pm = PenaltyManager(setup["objective"])
     obj = sum(
