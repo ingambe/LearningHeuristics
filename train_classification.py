@@ -501,7 +501,13 @@ def one_pop_iter(
                                               bijection_job_id[x[0]] in job_to_allocate_this_step_machine]
                     get_biject_to_allocate.sort()
                     y_to_pred = torch.zeros((job_to_allocate_this_step_machine.shape[0],), dtype=torch.bool)
-                    y_to_pred[job_to_allocate_this_step_machine == get_biject_to_allocate] = True
+                    for idx, job_candidate in enumerate(job_to_allocate_this_step_machine):
+                        if job_candidate.item() in get_biject_to_allocate:
+                            y_to_pred[idx] = True
+                    assert y_to_pred.sum() == len(get_biject_to_allocate), f'{y_to_pred.sum()} not the same {len(get_biject_to_allocate)}'
+                    #for i, job in enumerate(get_biject_to_allocate):
+                    #    if
+                    #y_to_pred[job_to_allocate_this_step_machine == torch.tensor(get_biject_to_allocate)] = True
                     all_labels.append(y_to_pred)
                     #print('-' * 10)
                     #print(f'shape of labels {y_to_pred.shape}')
@@ -624,19 +630,22 @@ def one_pop_iter(
         #print(f'all_padded_labels {all_padded_labels.shape}')
         #print(f'mask {mask.shape}')
         dataset = TensorDataset(all_reps, all_padded_labels, mask)
-        dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-
+        dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
     ex_nn = Network(6, 1)
     optimizer = torch.optim.Adam(ex_nn.parameters(), lr=0.001)
     # criterion multi label cross entropy, higher weight for positive label
-    criterion = nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.tensor([10.0]))
+    criterion = nn.BCEWithLogitsLoss(reduction='none')
     for epoch in range(100):
         acc = 0
         losses = 0
         total_precision = 0
         total_recall = 0
         iter = 0
+        total_tp = 0
+        total_fp = 0
+        total_fn = 0
+        total_tn = 0
         for batch in dataloader:
             optimizer.zero_grad()
             reps, labels, mask = batch
@@ -649,15 +658,21 @@ def one_pop_iter(
             with torch.no_grad():
                 # compute the accuracy
                 pred = torch.sigmoid(output) > 0.5
-                acc += (pred == labels).float().sum() / mask.float().sum()
+                acc += (pred[mask] == labels[mask]).float().sum() / mask.float().sum()
                 losses += loss.item()
                 # compute the precision and recall
                 tp = ((pred == 1) & (labels == 1)).float().sum()
                 fp = ((pred == 1) & (labels == 0)).float().sum()
                 fn = ((pred == 0) & (labels == 1)).float().sum()
-                total_precision += tp / min((tp + fp), 1)
-                total_recall += tp / min((tp + fn), 1)
+                tn = ((pred == 0) & (labels == 0)).float().sum()
+                total_precision += tp / (tp + fp)
+                total_recall += tp / (tp + fn)
+                total_tp += tp
+                total_fp += fp
+                total_fn += fn
+                total_tn += tn
         print(f'epoch {epoch} loss {losses / iter} acc {acc / iter} precision {total_precision / iter} recall {total_recall / iter}')
+        print(f'tp {total_tp / iter} fp {total_fp / iter} fn {total_fn / iter} tn {total_tn / iter}')
     # save the model
     torch.save(ex_nn.state_dict(), 'pretrained.pt')
     return all_reps, all_padded_labels, mask
