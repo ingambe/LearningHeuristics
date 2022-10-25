@@ -665,8 +665,8 @@ def one_pop_iter(
                 fp = ((pred == 1) & (labels == 0)).float().sum()
                 fn = ((pred == 0) & (labels == 1)).float().sum()
                 tn = ((pred == 0) & (labels == 0)).float().sum()
-                total_precision += tp / (tp + fp)
-                total_recall += tp / (tp + fn)
+                total_precision += tp / ((tp + fp) + 1e-8)
+                total_recall += tp / ((tp + fn) + 1e-8)
                 total_tp += tp
                 total_fp += fp
                 total_fn += fn

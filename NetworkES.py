@@ -70,12 +70,16 @@ def layer_init(layer, bias_const=0.0):
 class Network(nn.Module):
     def __init__(self, imput_dim, output_dim):
         super(Network, self).__init__()
+        self.encoder = nn.TransformerEncoderLayer(
+            d_model=imput_dim, nhead=1, dim_feedforward=imput_dim * 4, batch_first=True, norm_first=True
+        )
         self.ln1 = layer_init(nn.Linear(imput_dim, 32))
         self.ln2 = layer_init(nn.Linear(32, 32))
         self.ln3 = layer_init(nn.Linear(32, output_dim))
         self.activation = nn.Tanh()
 
     def forward(self, x):
+        x = self.encoder(x) + x
         x = self.activation(self.ln1(x))
         x = self.activation(self.ln2(x))
         return self.ln3(x)

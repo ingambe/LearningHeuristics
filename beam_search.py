@@ -239,119 +239,127 @@ def master_iter(
                 not_finished_job, torch.le(min_starts, day)
             )
             job_to_allocate_this_step = torch.nonzero(to_allocate_this_step).view(-1)
-            if job_to_allocate_this_step.shape[0] > 0:
-                if len(job_to_allocate_this_step) == 1:
-                    # just for performance, avoid a softmax on 2000+ job for only one action
-                    order_jobs = job_to_allocate_this_step
-                else:
-                    priority_jobs = _compute_job_priority(
-                        (deadlines - day)[job_to_allocate_this_step],
-                        nb_day_left[job_to_allocate_this_step],
-                        job_weights[job_to_allocate_this_step],
-                        nb_day_outside_left[job_to_allocate_this_step],
-                        nb_coupling_day_left[job_to_allocate_this_step],
-                        all_task_length[job_to_allocate_this_step],
-                        network,
-                    )
-                    probabilities = F.log_softmax(priority_jobs, dim=0)
-                    job_prob_value, order_jobs = torch.sort(
-                        probabilities, descending=True, stable=True
-                    )
-                    order_jobs = job_to_allocate_this_step[order_jobs]
-                    # some job are the same, so same probabilities that's symmetries we can break
-                    prob1 = job_prob_value[0]
-                    prob2 = job_prob_value[0]
-                    idx_prob = 0
-                    while (
-                        torch.isclose(prob1, prob2).item()
-                        and idx_prob + 1 < job_prob_value.shape[0]
-                    ):
-                        idx_prob += 1
-                        prob2 = job_prob_value[idx_prob]
-                    list_choice_made.append((step_nb, (prob1 - prob2).item(), idx_prob))
-                step_nb += 1
-                for i in order_jobs:
-                    job_object = all_jobs[i]
-                    # check if compatible
-                    # not finished
-                    current_task_nb = current_job_op[i]
-                    if to_allocate_this_step[i]:
-                        current_task = job_object.tasks[current_task_nb]
-                        task_length = current_task.length
-                        needed_machine = current_task.machine.id
-                        # machine capacity present
-                        if machine_days[day][
-                            needed_machine
-                        ] + task_length <= current_task.machine.capacity(day, cm):
-                            can_allocate = True
-                            k = 1
-                            machine_day = day
-                            all_tasks_to_allocate = {machine_day: current_task}
+            machine_to_allocate = defaultdict(lambda: list())
+            for job_nb in job_to_allocate_this_step:
+                job = all_jobs[job_nb]
+                task = job.tasks[current_job_op[job_nb]]
+                machine_to_allocate[task.machine.id].append(job_nb)
+            for machine_id, machine_job_list in machine_to_allocate.items():
+                job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
+                if job_to_allocate_this_step_machine.shape[0] > 0:
+                    if len(job_to_allocate_this_step_machine) == 1:
+                        # just for performance, avoid a softmax on 2000+ job for only one action
+                        order_jobs = job_to_allocate_this_step_machine
+                    else:
+                        priority_jobs = _compute_job_priority(
+                            (deadlines - day)[job_to_allocate_this_step_machine],
+                            nb_day_left[job_to_allocate_this_step_machine],
+                            job_weights[job_to_allocate_this_step_machine],
+                            nb_day_outside_left[job_to_allocate_this_step_machine],
+                            nb_coupling_day_left[job_to_allocate_this_step_machine],
+                            all_task_length[job_to_allocate_this_step_machine],
+                            network,
+                        )
+                        probabilities = F.log_softmax(priority_jobs, dim=0)
+                        job_prob_value, order_jobs = torch.sort(
+                            probabilities, descending=True, stable=True
+                        )
+                        order_jobs = job_to_allocate_this_step_machine[order_jobs]
+                        if len(job_prob_value) > 1:
+                            # some job are the same, so same probabilities that's symmetries we can break
+                            prob1 = job_prob_value[0]
+                            prob2 = job_prob_value[0]
+                            idx_prob = 0
                             while (
-                                can_allocate
-                                and current_task_nb + k < len(job_object.tasks)
-                                and job_object.tasks[
-                                    current_task_nb + k
-                                ].directly_after_last
+                                torch.isclose(prob1, prob2).item()
+                                and idx_prob + 1 < job_prob_value.shape[0]
                             ):
-                                machine_day = current_task.machine.next_timestep(
-                                    machine_day
-                                    + job_object.tasks[
+                                idx_prob += 1
+                                prob2 = job_prob_value[idx_prob]
+                            list_choice_made.append((step_nb, (prob1 - prob2).item(), idx_prob))
+                    step_nb += 1
+                    for i in order_jobs:
+                        job_object = all_jobs[i]
+                        # check if compatible
+                        # not finished
+                        current_task_nb = current_job_op[i]
+                        if to_allocate_this_step[i]:
+                            current_task = job_object.tasks[current_task_nb]
+                            task_length = current_task.length
+                            needed_machine = current_task.machine.id
+                            # machine capacity present
+                            if machine_days[day][
+                                needed_machine
+                            ] + task_length <= current_task.machine.capacity(day, cm):
+                                can_allocate = True
+                                k = 1
+                                machine_day = day
+                                all_tasks_to_allocate = {machine_day: current_task}
+                                while (
+                                    can_allocate
+                                    and current_task_nb + k < len(job_object.tasks)
+                                    and job_object.tasks[
                                         current_task_nb + k
-                                    ].free_days_before,
-                                    cm,
-                                )
-                                if machine_days[machine_day][
-                                    needed_machine
-                                ] + job_object.tasks[
-                                    current_task_nb + k
-                                ].length > current_task.machine.capacity(
-                                    machine_day, cm
+                                    ].directly_after_last
                                 ):
-                                    can_allocate = False
-                                all_tasks_to_allocate[machine_day] = job_object.tasks[
-                                    current_task_nb + k
-                                ]
-                                k += 1
-                            if can_allocate:
-                                for day_allocation in all_tasks_to_allocate:
-                                    current_task_allocation = all_tasks_to_allocate[
-                                        day_allocation
-                                    ]
-                                    task_bijection = bijection_task_id[
-                                        current_task_allocation.id
-                                    ]
-                                    task_day_allocation[task_bijection] = day_allocation
-                                    machine_days[day_allocation][
-                                        current_task.machine.id
-                                    ] += current_task_allocation.length
-                                    nb_day_left[
-                                        i
-                                    ] -= current_task_allocation.free_days_before
-                                    nb_day_outside_left[
-                                        i
-                                    ] -= current_task_allocation.free_days_before
-                                current_job_op[i] += len(all_tasks_to_allocate)
-                                if len(all_tasks_to_allocate) > 1:
-                                    nb_coupling_day_left[i] -= len(
-                                        all_tasks_to_allocate
+                                    machine_day = current_task.machine.next_timestep(
+                                        machine_day
+                                        + job_object.tasks[
+                                            current_task_nb + k
+                                        ].free_days_before,
+                                        cm,
                                     )
-                                nb_day_left[i] -= len(all_tasks_to_allocate)
-                                if current_job_op[i] == len(job_object.tasks):
-                                    number_finished_job += 1
-                                    not_finished_job[i] = False
-                                else:
-                                    last_task = job_object.tasks[current_job_op[i] - 1]
-                                    next_task = job_object.tasks[current_job_op[i]]
+                                    if machine_days[machine_day][
+                                        needed_machine
+                                    ] + job_object.tasks[
+                                        current_task_nb + k
+                                    ].length > current_task.machine.capacity(
+                                        machine_day, cm
+                                    ):
+                                        can_allocate = False
+                                    all_tasks_to_allocate[machine_day] = job_object.tasks[
+                                        current_task_nb + k
+                                    ]
+                                    k += 1
+                                if can_allocate:
+                                    for day_allocation in all_tasks_to_allocate:
+                                        current_task_allocation = all_tasks_to_allocate[
+                                            day_allocation
+                                        ]
+                                        task_bijection = bijection_task_id[
+                                            current_task_allocation.id
+                                        ]
+                                        task_day_allocation[task_bijection] = day_allocation
+                                        machine_days[day_allocation][
+                                            current_task.machine.id
+                                        ] += current_task_allocation.length
+                                        nb_day_left[
+                                            i
+                                        ] -= current_task_allocation.free_days_before
+                                        nb_day_outside_left[
+                                            i
+                                        ] -= current_task_allocation.free_days_before
+                                    current_job_op[i] += len(all_tasks_to_allocate)
+                                    if len(all_tasks_to_allocate) > 1:
+                                        nb_coupling_day_left[i] -= len(
+                                            all_tasks_to_allocate
+                                        )
+                                    nb_day_left[i] -= len(all_tasks_to_allocate)
+                                    if current_job_op[i] == len(job_object.tasks):
+                                        number_finished_job += 1
+                                        not_finished_job[i] = False
+                                    else:
+                                        last_task = job_object.tasks[current_job_op[i] - 1]
+                                        next_task = job_object.tasks[current_job_op[i]]
 
-                                    task_bijection = bijection_task_id[last_task.id]
-                                    min_starts[i] = max(
-                                        next_task.earliest_start,
-                                        task_day_allocation[task_bijection]
-                                        + next_task.free_days_before
-                                        + 1,
-                                    )
-                                    all_task_length[i] = next_task.length
+                                        task_bijection = bijection_task_id[last_task.id]
+                                        min_starts[i] = max(
+                                            next_task.earliest_start,
+                                            task_day_allocation[task_bijection]
+                                            + next_task.free_days_before
+                                            + 1,
+                                        )
+                                        all_task_length[i] = next_task.length
             day += 1
 
         delay_jobs = np.zeros(len(job_list), dtype=int)
@@ -439,121 +447,121 @@ def one_pop_iter(
                 not_finished_job, torch.le(min_starts, day)
             )
             job_to_allocate_this_step = torch.nonzero(to_allocate_this_step).view(-1)
-            if job_to_allocate_this_step.shape[0] > 0:
-                if len(job_to_allocate_this_step) == 1:
-                    # just for performance, avoid a softmax on 2000+ job for only one action
-                    order_jobs = job_to_allocate_this_step
-                else:
-                    priority_jobs = _compute_job_priority(
-                        (deadlines - day)[job_to_allocate_this_step],
-                        nb_day_left[job_to_allocate_this_step],
-                        job_weights[job_to_allocate_this_step],
-                        nb_day_outside_left[job_to_allocate_this_step],
-                        nb_coupling_day_left[job_to_allocate_this_step],
-                        all_task_length[job_to_allocate_this_step],
-                        network,
-                    )
-                    # probabilities = F.softmax(priority_jobs, dim=0)
-                    # print(probabilities)
-                    """
-                    _, order_jobs = torch.sort(priority_jobs, descending=True, stable=True)
-                    order_jobs = job_to_allocate_this_step[order_jobs]
-                    if greedy_until == step_nb:
-                        order_jobs[0], order_jobs[1] = order_jobs[1], order_jobs[0]
-                    """
-                    _, order_jobs = torch.sort(
-                        priority_jobs, descending=True, stable=True
-                    )
-                    order_jobs = job_to_allocate_this_step[order_jobs].numpy()
-                    if greedy_until == step_nb:
-                        # some job are the same, so same priority that's symmetries we can break
-                        order_jobs[0], order_jobs[swap_with] = (
-                            order_jobs[swap_with],
-                            order_jobs[0],
+            machine_to_allocate = defaultdict(lambda: list())
+            for job_nb in job_to_allocate_this_step:
+                job = all_jobs[job_nb]
+                task = job.tasks[current_job_op[job_nb]]
+                machine_to_allocate[task.machine.id].append(job_nb)
+            for machine_id, machine_job_list in machine_to_allocate.items():
+                job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
+                if job_to_allocate_this_step_machine.shape[0] > 0:
+                    if len(job_to_allocate_this_step_machine) == 1:
+                        # just for performance, avoid a softmax on 2000+ job for only one action
+                        order_jobs = job_to_allocate_this_step_machine
+                    else:
+                        priority_jobs = _compute_job_priority(
+                            (deadlines - day)[job_to_allocate_this_step_machine],
+                            nb_day_left[job_to_allocate_this_step_machine],
+                            job_weights[job_to_allocate_this_step_machine],
+                            nb_day_outside_left[job_to_allocate_this_step_machine],
+                            nb_coupling_day_left[job_to_allocate_this_step_machine],
+                            all_task_length[job_to_allocate_this_step_machine],
+                            network,
                         )
-                step_nb += 1
-                for i in order_jobs:
-                    job_object = all_jobs[i]
-                    # check if compatible
-                    # not finished
-                    current_task_nb = current_job_op[i]
-                    if to_allocate_this_step[i]:
-                        current_task = job_object.tasks[current_task_nb]
-                        task_length = current_task.length
-                        needed_machine = current_task.machine.id
-                        # machine capacity present
-                        if machine_days[day][
-                            needed_machine
-                        ] + task_length <= current_task.machine.capacity(day, cm):
-                            can_allocate = True
-                            k = 1
-                            machine_day = day
-                            all_tasks_to_allocate = {machine_day: current_task}
-                            while (
-                                can_allocate
-                                and current_task_nb + k < len(job_object.tasks)
-                                and job_object.tasks[
-                                    current_task_nb + k
-                                ].directly_after_last
-                            ):
-                                machine_day = current_task.machine.next_timestep(
-                                    machine_day
-                                    + job_object.tasks[
-                                        current_task_nb + k
-                                    ].free_days_before,
-                                    cm,
-                                )
-                                if machine_days[machine_day][
-                                    needed_machine
-                                ] + job_object.tasks[
-                                    current_task_nb + k
-                                ].length > current_task.machine.capacity(
-                                    machine_day, cm
-                                ):
-                                    can_allocate = False
-                                all_tasks_to_allocate[machine_day] = job_object.tasks[
-                                    current_task_nb + k
-                                ]
-                                k += 1
-                            if can_allocate:
-                                for day_allocation in all_tasks_to_allocate:
-                                    current_task_allocation = all_tasks_to_allocate[
-                                        day_allocation
-                                    ]
-                                    task_bijection = bijection_task_id[
-                                        current_task_allocation.id
-                                    ]
-                                    task_day_allocation[task_bijection] = day_allocation
-                                    machine_days[day_allocation][
-                                        current_task.machine.id
-                                    ] += current_task_allocation.length
-                                    nb_day_left[
-                                        i
-                                    ] -= current_task_allocation.free_days_before
-                                    nb_day_outside_left[
-                                        i
-                                    ] -= current_task_allocation.free_days_before
-                                current_job_op[i] += len(all_tasks_to_allocate)
-                                if len(all_tasks_to_allocate) > 1:
-                                    nb_coupling_day_left[i] -= len(
-                                        all_tasks_to_allocate
-                                    )
-                                nb_day_left[i] -= len(all_tasks_to_allocate)
-                                if current_job_op[i] == len(job_object.tasks):
-                                    number_finished_job += 1
-                                    not_finished_job[i] = False
-                                else:
-                                    last_task = job_object.tasks[current_job_op[i] - 1]
-                                    next_task = job_object.tasks[current_job_op[i]]
 
-                                    task_bijection = bijection_task_id[last_task.id]
-                                    min_starts[i] = max(
-                                        next_task.earliest_start,
-                                        task_day_allocation[task_bijection]
-                                        + next_task.free_days_before
-                                        + 1,
+                        _, order_jobs = torch.sort(
+                            priority_jobs, descending=True, stable=True
+                        )
+                        order_jobs = job_to_allocate_this_step_machine[order_jobs].numpy()
+                        if greedy_until == step_nb and len(order_jobs) > swap_with:
+                            # some job are the same, so same priority that's symmetries we can break
+                            order_jobs[0], order_jobs[swap_with] = (
+                                order_jobs[swap_with],
+                                order_jobs[0],
+                            )
+                    step_nb += 1
+                    for i in order_jobs:
+                        job_object = all_jobs[i]
+                        # check if compatible
+                        # not finished
+                        current_task_nb = current_job_op[i]
+                        if to_allocate_this_step[i]:
+                            current_task = job_object.tasks[current_task_nb]
+                            task_length = current_task.length
+                            needed_machine = current_task.machine.id
+                            # machine capacity present
+                            if machine_days[day][
+                                needed_machine
+                            ] + task_length <= current_task.machine.capacity(day, cm):
+                                can_allocate = True
+                                k = 1
+                                machine_day = day
+                                all_tasks_to_allocate = {machine_day: current_task}
+                                while (
+                                    can_allocate
+                                    and current_task_nb + k < len(job_object.tasks)
+                                    and job_object.tasks[
+                                        current_task_nb + k
+                                    ].directly_after_last
+                                ):
+                                    machine_day = current_task.machine.next_timestep(
+                                        machine_day
+                                        + job_object.tasks[
+                                            current_task_nb + k
+                                        ].free_days_before,
+                                        cm,
                                     )
-                                    all_task_length[i] = next_task.length
+                                    if machine_days[machine_day][
+                                        needed_machine
+                                    ] + job_object.tasks[
+                                        current_task_nb + k
+                                    ].length > current_task.machine.capacity(
+                                        machine_day, cm
+                                    ):
+                                        can_allocate = False
+                                    all_tasks_to_allocate[machine_day] = job_object.tasks[
+                                        current_task_nb + k
+                                    ]
+                                    k += 1
+                                if can_allocate:
+                                    for day_allocation in all_tasks_to_allocate:
+                                        current_task_allocation = all_tasks_to_allocate[
+                                            day_allocation
+                                        ]
+                                        task_bijection = bijection_task_id[
+                                            current_task_allocation.id
+                                        ]
+                                        task_day_allocation[task_bijection] = day_allocation
+                                        machine_days[day_allocation][
+                                            current_task.machine.id
+                                        ] += current_task_allocation.length
+                                        nb_day_left[
+                                            i
+                                        ] -= current_task_allocation.free_days_before
+                                        nb_day_outside_left[
+                                            i
+                                        ] -= current_task_allocation.free_days_before
+                                    current_job_op[i] += len(all_tasks_to_allocate)
+                                    if len(all_tasks_to_allocate) > 1:
+                                        nb_coupling_day_left[i] -= len(
+                                            all_tasks_to_allocate
+                                        )
+                                    nb_day_left[i] -= len(all_tasks_to_allocate)
+                                    if current_job_op[i] == len(job_object.tasks):
+                                        number_finished_job += 1
+                                        not_finished_job[i] = False
+                                    else:
+                                        last_task = job_object.tasks[current_job_op[i] - 1]
+                                        next_task = job_object.tasks[current_job_op[i]]
+
+                                        task_bijection = bijection_task_id[last_task.id]
+                                        min_starts[i] = max(
+                                            next_task.earliest_start,
+                                            task_day_allocation[task_bijection]
+                                            + next_task.free_days_before
+                                            + 1,
+                                        )
+                                        all_task_length[i] = next_task.length
             day += 1
 
         delay_jobs = np.zeros(len(job_list), dtype=int)
