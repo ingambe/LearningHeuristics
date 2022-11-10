@@ -270,6 +270,7 @@ def solve_with_cp_get_result(
 
     machine_days = defaultdict(lambda: defaultdict(lambda: 0))
     day_job = defaultdict(lambda: list())
+    task_day = defaultdict(lambda: int)
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         print(f"We found something {solver.ObjectiveValue()}!")
         print(f"Weighted sum delay {solver.Value(sum_weighted_delay)}")
@@ -281,6 +282,7 @@ def solve_with_cp_get_result(
                 cp_task = all_tasks[job.id, task.id]
                 task.solver_result_processing_day = solver.Value(cp_task.start)
                 day_job[task.solver_result_processing_day].append((job.id, task.id))
+                task_day[task.id] = task.solver_result_processing_day
                 machine_days[task.solver_result_processing_day][
                     task.machine.id
                 ] += task.length
@@ -304,7 +306,7 @@ def solve_with_cp_get_result(
     else:
         print(f"Status is {status}")
 
-    return day_job
+    return day_job, task_day
 
 
 def compute_input_tensor(
@@ -403,7 +405,7 @@ def generate_data(
         f"number of jobs to allocates {number_jobs}, total of {number_tasks} tasks to perform on {number_machines} machines"
     )
 
-    days_allocation = solve_with_cp_get_result(job_list, setup, cm)
+    days_allocation, task_day = solve_with_cp_get_result(job_list, setup, cm)
     result = one_pop_iter(
         pm,
         deadlines,
@@ -415,7 +417,8 @@ def generate_data(
         all_jobs,
         job_weights,
         job_list,
-        days_allocation
+        days_allocation,
+        task_day
     )
     return None
 
@@ -431,7 +434,8 @@ def one_pop_iter(
         all_jobs,
         job_weights,
         job_list,
-        days_allocation
+        days_allocation,
+        task_day
 ):
     with torch.no_grad():
         machine_days = defaultdict(lambda: defaultdict(lambda: 0))
@@ -483,7 +487,8 @@ def one_pop_iter(
             for job_nb in job_to_allocate_this_step:
                 job = all_jobs[job_nb]
                 task = job.tasks[current_job_op[job_nb]]
-                machine_to_allocate[task.machine.id].append(job_nb)
+                if task_day[task.id] >= max(day - 3, 0):
+                    machine_to_allocate[task.machine.id].append(job_nb)
             for machine_id, machine_job_list in machine_to_allocate.items():
                 job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
                 if job_to_allocate_this_step_machine.shape[0] > 0:
@@ -636,6 +641,7 @@ def one_pop_iter(
     optimizer = torch.optim.Adam(ex_nn.parameters(), lr=0.001)
     # criterion multi label cross entropy, higher weight for positive label
     criterion = nn.BCEWithLogitsLoss(reduction='none')
+    #criterion = nn.MSELoss(reduction='none')
     for epoch in range(100):
         acc = 0
         losses = 0
