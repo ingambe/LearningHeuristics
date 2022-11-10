@@ -477,6 +477,7 @@ def one_pop_iter(
         not_finished_job = torch.ones((number_jobs,), dtype=torch.bool)
         all_job_representation = []
         all_labels = []
+        all_loss_weights = []
         while day <= max(days_allocation.keys()):
             print(f"day {day}, {number_finished_job} jobs finished total of {number_jobs}")
             to_allocate_this_step = torch.logical_and(
@@ -484,11 +485,13 @@ def one_pop_iter(
             )
             job_to_allocate_this_step = torch.nonzero(to_allocate_this_step).view(-1)
             machine_to_allocate = defaultdict(lambda: list())
+            task_to_machine_to_allocate = defaultdict(lambda: list())
             for job_nb in job_to_allocate_this_step:
                 job = all_jobs[job_nb]
                 task = job.tasks[current_job_op[job_nb]]
-                if task_day[task.id] >= max(day - 3, 0):
+                if task_day[task.id] >= max(day - 7, 0):
                     machine_to_allocate[task.machine.id].append(job_nb)
+                    task_to_machine_to_allocate[task.machine.id].append(task.id)
             for machine_id, machine_job_list in machine_to_allocate.items():
                 job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
                 if job_to_allocate_this_step_machine.shape[0] > 0:
@@ -514,6 +517,13 @@ def one_pop_iter(
                     #    if
                     #y_to_pred[job_to_allocate_this_step_machine == torch.tensor(get_biject_to_allocate)] = True
                     all_labels.append(y_to_pred)
+
+                    this_day_machine_loss_weight = []
+                    for job_day_machine in task_to_machine_to_allocate[machine_id]:
+                        this_day_machine_loss_weight.append((task_day[job_day_machine] - day) ** 2)
+                    this_day_machine_loss_weight = torch.tensor(this_day_machine_loss_weight, dtype=torch.double)
+                    all_loss_weights.append(this_day_machine_loss_weight)
+                    assert y_to_pred.shape[0] == this_day_machine_loss_weight.shape[0], f'{y_to_pred.shape[0]} not the same {this_day_machine_loss_weight.shape[0]}'
                     #print('-' * 10)
                     #print(f'shape of labels {y_to_pred.shape}')
                     #print(f'shape of representation {job_representation.shape}')
@@ -626,15 +636,17 @@ def one_pop_iter(
         max_len = max([x.shape[0] for x in all_job_representation])
         all_reps = torch.zeros((len(all_job_representation), max_len, all_job_representation[0].shape[1]))
         all_padded_labels = torch.zeros((len(all_labels), max_len), dtype=torch.bool)
+        all_padded_weights = torch.zeros((len(all_loss_weights), max_len), dtype=torch.bool)
         mask = torch.zeros((len(all_job_representation), max_len), dtype=torch.bool)
         for i, (x, y) in enumerate(zip(all_job_representation, all_labels)):
             all_reps[i, :x.shape[0], :] = x
             all_padded_labels[i, :y.shape[0]] = y
+            all_padded_weights[i, :y.shape[0]] = all_loss_weights[i] + 1
             mask[i, :x.shape[0]] = True
         #print(f'all_reps {all_reps.shape}')
         #print(f'all_padded_labels {all_padded_labels.shape}')
         #print(f'mask {mask.shape}')
-        dataset = TensorDataset(all_reps, all_padded_labels, mask)
+        dataset = TensorDataset(all_reps, all_padded_labels, all_padded_weights, mask)
         dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
     ex_nn = Network(6, 1)
@@ -654,10 +666,10 @@ def one_pop_iter(
         total_tn = 0
         for batch in dataloader:
             optimizer.zero_grad()
-            reps, labels, mask = batch
+            reps, labels, mask, weight_loss = batch
             output = ex_nn(reps).squeeze(2)
             loss = criterion(output, labels.float())
-            loss = (loss * mask.float()).sum() / mask.float().sum()
+            loss = (loss * mask.float() * weight_loss.float()).sum() / mask.float().sum()
             loss.backward()
             optimizer.step()
             iter += 1
