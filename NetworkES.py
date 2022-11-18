@@ -61,7 +61,7 @@ def _compute_job_priority(
 
 
 def layer_init(layer, bias_const=0.0):
-    # torch.nn.init.orthogonal_(layer.weight, math.sqrt(2))
+    torch.nn.init.xavier_uniform_(layer.weight, gain=torch.nn.init.calculate_gain("tanh"))
     if layer.bias is not None:
         torch.nn.init.constant_(layer.bias, bias_const)
     return layer
