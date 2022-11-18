@@ -71,10 +71,10 @@ def beam_search(
     job_weights_ray = ray.put(job_weights)
     job_list_ray = ray.put(job_list)
 
-    print("----------Start beam search----------")
-    print(
-        f"number of jobs to allocates {number_jobs}, total of {number_tasks} tasks to perform on {number_machines} machines"
-    )
+    #print("----------Start beam search----------")
+    #print(
+    #    f"number of jobs to allocates {number_jobs}, total of {number_tasks} tasks to perform on {number_machines} machines"
+    #)
     nb_features = 6
     best_solution = [float("inf"), None]
     start = time.time()
@@ -105,7 +105,7 @@ def beam_search(
         best_solution[0] = output_iter[0]
         best_solution[1] = output_iter[1]
         list_choice_made = output_iter[2]
-        print(f"objective master {best_solution[0] + obj_dv}")
+        #print(f"objective master {best_solution[0] + obj_dv}")
         list_choice_made.sort(key=lambda i: i[1], reverse=False)
         list_choice_made = list_choice_made[: min(len(list_choice_made), nb_beams)]
         master_net = ray.put(master_net)
@@ -133,7 +133,7 @@ def beam_search(
         results = np.array(output_iter[:, 0], dtype=float)
         solutions = np.array(output_iter[:, 1], dtype=object)
         best_pop = np.argmin(results)
-        print(f"best beam search solution {results[best_pop] + obj_dv}")
+        #print(f"best beam search solution {results[best_pop] + obj_dv}")
         if results[best_pop] < best_solution[0]:
             best_solution[1] = solutions[best_pop]
 

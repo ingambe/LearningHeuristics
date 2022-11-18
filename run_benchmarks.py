@@ -57,16 +57,16 @@ def gen_stats(res_to_print):
 
 # run experiments
 
-
 def main():
+    import os
     with io.open("results.txt", "w") as output:
         results = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: [])))
-
-        for instance in range(1, 6 + 1):
-            output.write("******************\n")
-            for week in weeks:
+        for week in weeks:
+            # list instances file in the data folder starting with f"instance_{week}week_"
+            instances = sorted([instance for instance in os.listdir("data") if instance.startswith(f"instance_{week}week_")])
+            for fn in instances:
+                print(f"Running {fn}")
                 for time_limit in time_limits:
-                    fn = f"instance_{week}week_{instance}.json"
                     json_obj = json.load(open(f"data/{fn}", "r"))
                     tasks, machines, jobs = load_presolved(json_obj)
                     cm = CapacityManager2(json_obj)
@@ -90,6 +90,7 @@ def main():
                         output.flush()
                         results[week][time_limit][solver].append(out["obj"])
                         gen_stats(results)
+                        print(f"For {solver} on instance {fn}: {out['obj']}")
 
 
 if __name__ == "__main__":
