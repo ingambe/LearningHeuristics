@@ -499,7 +499,7 @@ def one_pop_iter(
                 job_to_allocate_this_step_machine_copy = job_to_allocate_this_step_machine.clone()
                 if job_to_allocate_this_step_machine.shape[0] > 0:
                     delay_deadlines = (deadlines - day)[job_to_allocate_this_step_machine]
-                    indexes_sort_deadline = torch.argsort(delay_deadlines)[:100]
+                    indexes_sort_deadline = torch.argwhere(delay_deadlines <= max(delay_deadlines.min(), 0) + 2).view(-1)
                     job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
                     job_representation = compute_input_tensor(
                         (deadlines - day)[job_to_allocate_this_step_machine],
@@ -695,10 +695,10 @@ def one_pop_iter(
                 acc += (pred[mask] == labels[mask]).float().sum() / mask.float().sum()
                 losses += loss.item()
                 # compute the precision and recall
-                tp = ((pred == 1) & (labels == 1)).float().sum()
-                fp = ((pred == 1) & (labels == 0)).float().sum()
-                fn = ((pred == 0) & (labels == 1)).float().sum()
-                tn = ((pred == 0) & (labels == 0)).float().sum()
+                tp = ((pred[mask] == 1) & (labels[mask] == 1)).float().sum()
+                fp = ((pred[mask] == 1) & (labels[mask] == 0)).float().sum()
+                fn = ((pred[mask] == 0) & (labels[mask] == 1)).float().sum()
+                tn = ((pred[mask] == 0) & (labels[mask] == 0)).float().sum()
                 total_precision += tp / ((tp + fp) + 1e-8)
                 total_recall += tp / ((tp + fn) + 1e-8)
                 total_tp += tp

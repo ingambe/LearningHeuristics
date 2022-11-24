@@ -17,11 +17,11 @@ solvers = [
 ]
 
 time_limits = [
-    60,
+    30,
 ]
 
 weeks = [
-    4,
+    2,
 ]
 
 ref_solver = "greedy_solver:solve_with_greedy"
