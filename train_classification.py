@@ -498,6 +498,9 @@ def one_pop_iter(
                 job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
                 job_to_allocate_this_step_machine_copy = job_to_allocate_this_step_machine.clone()
                 if job_to_allocate_this_step_machine.shape[0] > 0:
+                    delay_deadlines = (deadlines - day)[job_to_allocate_this_step_machine]
+                    indexes_sort_deadline = torch.argsort(delay_deadlines)[:100]
+                    job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
                     job_representation = compute_input_tensor(
                         (deadlines - day)[job_to_allocate_this_step_machine],
                         nb_day_left[job_to_allocate_this_step_machine],
@@ -506,11 +509,6 @@ def one_pop_iter(
                         nb_coupling_day_left[job_to_allocate_this_step_machine],
                         all_task_length[job_to_allocate_this_step_machine],
                     )
-                    # sort per job_representation[:, 0], select the first 100
-                    indexes_sort_deadline = torch.argsort(job_representation[:, 0])[:100]
-                    job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
-                    job_representation = job_representation[indexes_sort_deadline, :]
-
                     all_job_representation.append(job_representation)
                     order_jobs = days_allocation[day]
                     get_biject_to_allocate = [bijection_job_id[x[0]] for x in order_jobs if
