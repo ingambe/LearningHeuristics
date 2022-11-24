@@ -2,6 +2,8 @@ from collections import defaultdict
 from math import floor
 from typing import List
 
+import transformers
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -494,6 +496,7 @@ def one_pop_iter(
                     task_to_machine_to_allocate[task.machine.id].append(task.id)
             for machine_id, machine_job_list in machine_to_allocate.items():
                 job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
+                job_to_allocate_this_step_machine_copy = job_to_allocate_this_step_machine.clone()
                 if job_to_allocate_this_step_machine.shape[0] > 0:
                     job_representation = compute_input_tensor(
                         (deadlines - day)[job_to_allocate_this_step_machine],
@@ -503,10 +506,16 @@ def one_pop_iter(
                         nb_coupling_day_left[job_to_allocate_this_step_machine],
                         all_task_length[job_to_allocate_this_step_machine],
                     )
+                    # sort per job_representation[:, 0], select the first 100
+                    indexes_sort_deadline = torch.argsort(job_representation[:, 0])[:100]
+                    job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
+                    job_representation = job_representation[indexes_sort_deadline, :]
+
                     all_job_representation.append(job_representation)
                     order_jobs = days_allocation[day]
                     get_biject_to_allocate = [bijection_job_id[x[0]] for x in order_jobs if
                                               bijection_job_id[x[0]] in job_to_allocate_this_step_machine]
+                    #print(f"get_biject_to_allocate {len(get_biject_to_allocate)}")
                     get_biject_to_allocate.sort()
                     y_to_pred = torch.zeros((job_to_allocate_this_step_machine.shape[0],), dtype=torch.bool)
                     for idx, job_candidate in enumerate(job_to_allocate_this_step_machine):
@@ -519,8 +528,9 @@ def one_pop_iter(
                     all_labels.append(y_to_pred)
 
                     this_day_machine_loss_weight = []
-                    for job_day_machine in task_to_machine_to_allocate[machine_id]:
-                        this_day_machine_loss_weight.append((task_day[job_day_machine] - day) ** 2)
+                    for idx_task, job_day_machine in enumerate(task_to_machine_to_allocate[machine_id]):
+                        if idx_task in indexes_sort_deadline:
+                            this_day_machine_loss_weight.append((task_day[job_day_machine] - day) ** 2)
                     this_day_machine_loss_weight = torch.tensor(this_day_machine_loss_weight, dtype=torch.double)
                     all_loss_weights.append(this_day_machine_loss_weight)
                     assert y_to_pred.shape[0] == this_day_machine_loss_weight.shape[0], f'{y_to_pred.shape[0]} not the same {this_day_machine_loss_weight.shape[0]}'
@@ -528,7 +538,9 @@ def one_pop_iter(
                     #print(f'shape of labels {y_to_pred.shape}')
                     #print(f'shape of representation {job_representation.shape}')
                     #print(f'-' * 10)
-                    for i in get_biject_to_allocate:
+                    get_biject_to_allocate_without_filtering = [bijection_job_id[x[0]] for x in order_jobs if
+                                              bijection_job_id[x[0]] in job_to_allocate_this_step_machine_copy]
+                    for i in get_biject_to_allocate_without_filtering:
                         job_object = all_jobs[i]
                         # check if compatible
                         # not finished
@@ -647,14 +659,19 @@ def one_pop_iter(
         #print(f'all_padded_labels {all_padded_labels.shape}')
         #print(f'mask {mask.shape}')
         dataset = TensorDataset(all_reps, all_padded_labels, all_padded_weights, mask)
-        dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
+        dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
     ex_nn = Network(6, 1)
-    optimizer = torch.optim.Adam(ex_nn.parameters(), lr=0.001)
+    number_training_step = 200
+    # learning rate scheduler warmup
+    optimizer = torch.optim.AdamW(ex_nn.parameters(), lr=0.001, betas=(0.9, 0.999), weight_decay=0.01)
+    lr_scheduler = transformers.get_cosine_schedule_with_warmup(
+        optimizer, num_warmup_steps=20, num_training_steps=number_training_step
+    )
     # criterion multi label cross entropy, higher weight for positive label
     criterion = nn.BCEWithLogitsLoss(reduction='none')
     #criterion = nn.MSELoss(reduction='none')
-    for epoch in range(100):
+    for epoch in range(1000):
         acc = 0
         losses = 0
         total_precision = 0
@@ -672,6 +689,7 @@ def one_pop_iter(
             loss = (loss * mask.float() * weight_loss.float()).sum() / mask.float().sum()
             loss.backward()
             optimizer.step()
+            lr_scheduler.step()
             iter += 1
             with torch.no_grad():
                 # compute the accuracy

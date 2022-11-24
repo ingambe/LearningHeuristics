@@ -17,7 +17,7 @@ solvers = [
 ]
 
 time_limits = [
-    1200,
+    60,
 ]
 
 weeks = [

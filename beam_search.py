@@ -191,6 +191,8 @@ def master_iter(
     network,
 ):
     with torch.no_grad():
+        network = torch.jit.script(network)
+        network.eval()
         machine_days = defaultdict(lambda: defaultdict(lambda: 0))
 
         # END of preprocess
@@ -251,6 +253,9 @@ def master_iter(
                         # just for performance, avoid a softmax on 2000+ job for only one action
                         order_jobs = job_to_allocate_this_step_machine
                     else:
+                        delay_to_deadline = (deadlines - day)[job_to_allocate_this_step_machine]
+                        indexes_sort_deadline = torch.argsort(delay_to_deadline)[:100]
+                        job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
                         priority_jobs = _compute_job_priority(
                             (deadlines - day)[job_to_allocate_this_step_machine],
                             nb_day_left[job_to_allocate_this_step_machine],
@@ -268,7 +273,7 @@ def master_iter(
                         if len(job_prob_value) > 1:
                             # some job are the same, so same probabilities that's symmetries we can break
                             prob1 = job_prob_value[0]
-                            prob2 = job_prob_value[0]
+                            prob2 = job_prob_value[1]
                             idx_prob = 0
                             while (
                                 torch.isclose(prob1, prob2).item()
@@ -401,6 +406,7 @@ def one_pop_iter(
     swap_with=1,
 ):
     with torch.no_grad():
+        network = torch.jit.script(network)
         machine_days = defaultdict(lambda: defaultdict(lambda: 0))
 
         # END of preprocess
