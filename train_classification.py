@@ -664,7 +664,7 @@ def one_pop_iter(
     ex_nn = Network(6, 1)
     number_training_step = 200
     # learning rate scheduler warmup
-    optimizer = torch.optim.AdamW(ex_nn.parameters(), lr=0.003, betas=(0.9, 0.999), weight_decay=0.01)
+    optimizer = torch.optim.AdamW(ex_nn.parameters(), lr=0.003, betas=(0.9, 0.999), weight_decay=0.003)
     lr_scheduler = transformers.get_cosine_schedule_with_warmup(
         optimizer, num_warmup_steps=20, num_training_steps=number_training_step
     )
