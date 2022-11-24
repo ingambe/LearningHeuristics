@@ -671,7 +671,7 @@ def one_pop_iter(
     # criterion multi label cross entropy, higher weight for positive label
     criterion = nn.BCEWithLogitsLoss(reduction='none')
     #criterion = nn.MSELoss(reduction='none')
-    for epoch in range(1000):
+    for epoch in range(number_training_step):
         acc = 0
         losses = 0
         total_precision = 0
