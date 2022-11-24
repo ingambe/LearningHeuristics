@@ -499,7 +499,7 @@ def one_pop_iter(
                 job_to_allocate_this_step_machine_copy = job_to_allocate_this_step_machine.clone()
                 if job_to_allocate_this_step_machine.shape[0] > 0:
                     delay_deadlines = (deadlines - day)[job_to_allocate_this_step_machine]
-                    indexes_sort_deadline = torch.argwhere(delay_deadlines <= max(delay_deadlines.min(), 0) + 2).view(-1)
+                    indexes_sort_deadline = torch.argwhere(delay_deadlines <= max(delay_deadlines.min(), 0) + 7).view(-1)
                     job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
                     job_representation = compute_input_tensor(
                         (deadlines - day)[job_to_allocate_this_step_machine],
@@ -662,7 +662,7 @@ def one_pop_iter(
     ex_nn = Network(6, 1)
     number_training_step = 200
     # learning rate scheduler warmup
-    optimizer = torch.optim.AdamW(ex_nn.parameters(), lr=0.003, betas=(0.9, 0.999), weight_decay=0.003)
+    optimizer = torch.optim.AdamW(ex_nn.parameters(), lr=0.003, betas=(0.9, 0.999), weight_decay=0.01)
     lr_scheduler = transformers.get_cosine_schedule_with_warmup(
         optimizer, num_warmup_steps=20, num_training_steps=number_training_step
     )

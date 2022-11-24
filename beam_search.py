@@ -254,7 +254,7 @@ def master_iter(
                         order_jobs = job_to_allocate_this_step_machine
                     else:
                         delay_to_deadline = (deadlines - day)[job_to_allocate_this_step_machine]
-                        indexes_sort_deadline = torch.argwhere(delay_to_deadline <= max(delay_to_deadline.min(), 0) + 2).view(-1)
+                        indexes_sort_deadline = torch.argwhere(delay_to_deadline <= max(delay_to_deadline.min(), 0) + 7).view(-1)
                         job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
                         priority_jobs = _compute_job_priority(
                             (deadlines - day)[job_to_allocate_this_step_machine],
