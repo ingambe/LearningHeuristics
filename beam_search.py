@@ -191,7 +191,7 @@ def master_iter(
     network,
 ):
     with torch.no_grad():
-        network = torch.jit.script(network)
+        #network = torch.jit.script(network)
         network.eval()
         machine_days = defaultdict(lambda: defaultdict(lambda: 0))
 
@@ -406,7 +406,7 @@ def one_pop_iter(
     swap_with=1,
 ):
     with torch.no_grad():
-        network = torch.jit.script(network)
+        #network = torch.jit.script(network)
         machine_days = defaultdict(lambda: defaultdict(lambda: 0))
 
         # END of preprocess
