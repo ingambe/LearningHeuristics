@@ -12,9 +12,9 @@ solvers = [
     "greedy_solver:solve_with_greedy",
     #'lp_solver:solve_with_lp',
     #'cp_solver:solve_with_cp',
-    "beam_search:beam_search",
+    #"beam_search:beam_search",
     #"train_classification:generate_data",
-    #"new_approach:generate_data",
+    "new_approach:generate_data",
 ]
 
 time_limits = [
@@ -22,7 +22,7 @@ time_limits = [
 ]
 
 weeks = [
-    2,
+    4,
 ]
 
 ref_solver = "greedy_solver:solve_with_greedy"

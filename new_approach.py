@@ -1,7 +1,7 @@
-import os
+#import os
 from copy import deepcopy
 
-import transformers
+#import transformers
 
 import torch
 import torch.nn as nn
@@ -14,6 +14,7 @@ from math import floor
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpSolverSolutionCallback
 from torch.utils.data import TensorDataset, DataLoader
+import torch.nn.functional as F
 
 from NetworkES import Network
 from instance_reader import *
@@ -117,9 +118,8 @@ class TrainNetwork(CpSolverSolutionCallback):
             not_finished_job = torch.ones((self.number_jobs,), dtype=torch.bool)
             all_job_representation = []
             all_labels = []
-            all_loss_weights = []
             while day <= max(day_job.keys()):
-                print(f"day {day}, {number_finished_job} jobs finished total of {self.number_jobs}")
+                #print(f"day {day}, {number_finished_job} jobs finished total of {self.number_jobs}")
                 to_allocate_this_step = torch.logical_and(
                     not_finished_job, torch.le(min_starts, day)
                 )
@@ -134,9 +134,8 @@ class TrainNetwork(CpSolverSolutionCallback):
                         task_to_machine_to_allocate[task.machine.id].append(task.id)
                 for machine_id, machine_job_list in machine_to_allocate.items():
                     job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
-                    job_to_allocate_this_step_machine_copy = job_to_allocate_this_step_machine.clone()
                     if job_to_allocate_this_step_machine.shape[0] > 0:
-                        delay_deadlines = (self.deadlines - day)[job_to_allocate_this_step_machine]
+                        #delay_deadlines = (self.deadlines - day)[job_to_allocate_this_step_machine]
                         #indexes_sort_deadline = torch.argwhere(
                         #    delay_deadlines <= max(delay_deadlines.min(), 0) + 7).view(-1)
                         #job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
@@ -148,121 +147,114 @@ class TrainNetwork(CpSolverSolutionCallback):
                             nb_coupling_day_left[job_to_allocate_this_step_machine],
                             all_task_length[job_to_allocate_this_step_machine],
                         )
-                        all_job_representation.append(job_representation)
                         order_jobs = day_job[day]
                         get_biject_to_allocate = [self.bijection_job_id[x[0]] for x in order_jobs if
                                                   self.bijection_job_id[x[0]] in job_to_allocate_this_step_machine]
-                        # print(f"get_biject_to_allocate {len(get_biject_to_allocate)}")
-                        get_biject_to_allocate.sort()
-                        y_to_pred = torch.zeros((job_to_allocate_this_step_machine.shape[0],), dtype=torch.bool)
-                        for idx, job_candidate in enumerate(job_to_allocate_this_step_machine):
-                            if job_candidate.item() in get_biject_to_allocate:
-                                y_to_pred[idx] = True
-                        assert y_to_pred.sum() == len(
-                            get_biject_to_allocate), f'{y_to_pred.sum()} not the same {len(get_biject_to_allocate)}'
-                        # for i, job in enumerate(get_biject_to_allocate):
-                        #    if
-                        # y_to_pred[job_to_allocate_this_step_machine == torch.tensor(get_biject_to_allocate)] = True
-                        all_labels.append(y_to_pred)
-
-                        this_day_machine_loss_weight = []
-                        for idx_task, job_day_machine in enumerate(task_to_machine_to_allocate[machine_id]):
-                            this_day_machine_loss_weight.append((task_day[job_day_machine] - day) ** 2)
-                        this_day_machine_loss_weight = torch.tensor(this_day_machine_loss_weight, dtype=torch.double)
-                        all_loss_weights.append(this_day_machine_loss_weight)
-                        assert y_to_pred.shape[0] == this_day_machine_loss_weight.shape[
-                            0], f'{y_to_pred.shape[0]} not the same {this_day_machine_loss_weight.shape[0]}'
-                        # print('-' * 10)
-                        # print(f'shape of labels {y_to_pred.shape}')
-                        # print(f'shape of representation {job_representation.shape}')
-                        # print(f'-' * 10)
-                        get_biject_to_allocate_without_filtering = [self.bijection_job_id[x[0]] for x in order_jobs if
-                                                                    self.bijection_job_id[
-                                                                        x[0]] in job_to_allocate_this_step_machine_copy]
-                        for i in get_biject_to_allocate_without_filtering:
-                            job_object = self.all_jobs[i]
-                            # check if compatible
-                            # not finished
-                            current_task_nb = current_job_op[i]
-                            if to_allocate_this_step[i]:
-                                current_task = job_object.tasks[current_task_nb]
-                                task_length = current_task.length
-                                needed_machine = current_task.machine.id
-                                # machine capacity present
-                                if machine_days[day][
-                                    needed_machine
-                                ] + task_length <= current_task.machine.capacity(day, self.cm):
-                                    can_allocate = True
-                                    k = 1
-                                    machine_day = day
-                                    all_tasks_to_allocate = {machine_day: current_task}
-                                    while (
-                                            can_allocate
-                                            and current_task_nb + k < len(job_object.tasks)
-                                            and job_object.tasks[
-                                                current_task_nb + k
-                                            ].directly_after_last
-                                    ):
-                                        machine_day = current_task.machine.next_timestep(
-                                            machine_day
-                                            + job_object.tasks[
-                                                current_task_nb + k
-                                                ].free_days_before,
-                                            self.cm,
-                                        )
-                                        if machine_days[machine_day][
-                                            needed_machine
-                                        ] + job_object.tasks[
-                                            current_task_nb + k
-                                        ].length > current_task.machine.capacity(
-                                            machine_day, self.cm
+                        if len(get_biject_to_allocate) > 0:
+                            #print(f'job to allocate {get_biject_to_allocate}')
+                            # print(f"get_biject_to_allocate {len(get_biject_to_allocate)}")
+                            get_biject_to_allocate.sort()
+                            y_to_pred = torch.zeros((job_to_allocate_this_step_machine.shape[0],), dtype=torch.float)
+                            for idx, job_candidate in enumerate(job_to_allocate_this_step_machine):
+                                task_obj = self.all_jobs[job_candidate].tasks[current_job_op[job_candidate]]
+                                y_to_pred[idx] = task_day[task_obj.id] - day # 0 = today otherwise not today(positive)
+                            #assert y_to_pred.min() >= 0
+                            #print(y_to_pred.min())
+                            y_to_pred = F.softmax((y_to_pred - y_to_pred.max()) - y_to_pred.min(), dim=0)
+                            #assert y_to_pred.sum() == len(
+                            #    get_biject_to_allocate), f'{y_to_pred.sum()} not the same {len(get_biject_to_allocate)}'
+                            # for i, job in enumerate(get_biject_to_allocate):
+                            #    if
+                            # y_to_pred[job_to_allocate_this_step_machine == torch.tensor(get_biject_to_allocate)] = True
+                            all_labels.append(y_to_pred)
+                            all_job_representation.append(job_representation)
+                            # print('-' * 10)
+                            # print(f'shape of labels {y_to_pred.shape}')
+                            # print(f'shape of representation {job_representation.shape}')
+                            # print(f'-' * 10)
+                            for i in get_biject_to_allocate:
+                                job_object = self.all_jobs[i]
+                                # check if compatible
+                                # not finished
+                                current_task_nb = current_job_op[i]
+                                if to_allocate_this_step[i]:
+                                    current_task = job_object.tasks[current_task_nb]
+                                    task_length = current_task.length
+                                    needed_machine = current_task.machine.id
+                                    # machine capacity present
+                                    if machine_days[day][
+                                        needed_machine
+                                    ] + task_length <= current_task.machine.capacity(day, self.cm):
+                                        can_allocate = True
+                                        k = 1
+                                        machine_day = day
+                                        all_tasks_to_allocate = {machine_day: current_task}
+                                        while (
+                                                can_allocate
+                                                and current_task_nb + k < len(job_object.tasks)
+                                                and job_object.tasks[
+                                                    current_task_nb + k
+                                                ].directly_after_last
                                         ):
-                                            can_allocate = False
-                                        all_tasks_to_allocate[machine_day] = job_object.tasks[
-                                            current_task_nb + k
-                                            ]
-                                        k += 1
-                                    if can_allocate:
-                                        for day_allocation in all_tasks_to_allocate:
-                                            current_task_allocation = all_tasks_to_allocate[
-                                                day_allocation
-                                            ]
-                                            task_bijection = self.bijection_task_id[
-                                                current_task_allocation.id
-                                            ]
-                                            task_day_allocation[task_bijection] = day_allocation
-                                            machine_days[day_allocation][
-                                                current_task.machine.id
-                                            ] += current_task_allocation.length
-                                            nb_day_left[
-                                                i
-                                            ] -= current_task_allocation.free_days_before
-                                            nb_day_outside_left[
-                                                i
-                                            ] -= current_task_allocation.free_days_before
-                                        current_job_op[i] += len(all_tasks_to_allocate)
-                                        if len(all_tasks_to_allocate) > 1:
-                                            nb_coupling_day_left[i] -= len(
-                                                all_tasks_to_allocate
+                                            machine_day = current_task.machine.next_timestep(
+                                                machine_day
+                                                + job_object.tasks[
+                                                    current_task_nb + k
+                                                    ].free_days_before,
+                                                self.cm,
                                             )
-                                        nb_day_left[i] -= len(all_tasks_to_allocate)
-                                        if current_job_op[i] == len(job_object.tasks):
-                                            number_finished_job += 1
-                                            not_finished_job[i] = False
-                                        else:
-                                            last_task = job_object.tasks[current_job_op[i] - 1]
-                                            next_task = job_object.tasks[current_job_op[i]]
+                                            if machine_days[machine_day][
+                                                needed_machine
+                                            ] + job_object.tasks[
+                                                current_task_nb + k
+                                            ].length > current_task.machine.capacity(
+                                                machine_day, self.cm
+                                            ):
+                                                can_allocate = False
+                                            all_tasks_to_allocate[machine_day] = job_object.tasks[
+                                                current_task_nb + k
+                                                ]
+                                            k += 1
+                                        if can_allocate:
+                                            for day_allocation in all_tasks_to_allocate:
+                                                current_task_allocation = all_tasks_to_allocate[
+                                                    day_allocation
+                                                ]
+                                                task_bijection = self.bijection_task_id[
+                                                    current_task_allocation.id
+                                                ]
+                                                task_day_allocation[task_bijection] = day_allocation
+                                                machine_days[day_allocation][
+                                                    current_task.machine.id
+                                                ] += current_task_allocation.length
+                                                nb_day_left[
+                                                    i
+                                                ] -= current_task_allocation.free_days_before
+                                                nb_day_outside_left[
+                                                    i
+                                                ] -= current_task_allocation.free_days_before
+                                            current_job_op[i] += len(all_tasks_to_allocate)
+                                            if len(all_tasks_to_allocate) > 1:
+                                                nb_coupling_day_left[i] -= len(
+                                                    all_tasks_to_allocate
+                                                )
+                                            nb_day_left[i] -= len(all_tasks_to_allocate)
+                                            if current_job_op[i] == len(job_object.tasks):
+                                                number_finished_job += 1
+                                                not_finished_job[i] = False
+                                            else:
+                                                last_task = job_object.tasks[current_job_op[i] - 1]
+                                                next_task = job_object.tasks[current_job_op[i]]
 
-                                            task_bijection = self.bijection_task_id[last_task.id]
-                                            min_starts[i] = max(
-                                                next_task.earliest_start,
-                                                task_day_allocation[task_bijection]
-                                                + next_task.free_days_before
-                                                + 1,
-                                            )
-                                            all_task_length[i] = next_task.length
+                                                task_bijection = self.bijection_task_id[last_task.id]
+                                                min_starts[i] = max(
+                                                    next_task.earliest_start,
+                                                    task_day_allocation[task_bijection]
+                                                    + next_task.free_days_before
+                                                    + 1,
+                                                )
+                                                all_task_length[i] = next_task.length
                 day += 1
-
             delay_jobs = np.zeros(len(job_copy), dtype=int)
             for i, job in enumerate(job_copy):
                 if len(job.tasks) > 0:
@@ -273,64 +265,44 @@ class TrainNetwork(CpSolverSolutionCallback):
                     )
             # padding all all_job_representation and all_reps tensor with zero to have the same shape[0] size
             # create a mask to remove the padding
+            #print(f'padding')
             max_len = max([x.shape[0] for x in all_job_representation])
             all_reps = torch.zeros((len(all_job_representation), max_len, all_job_representation[0].shape[1]))
             all_padded_labels = torch.zeros((len(all_labels), max_len), dtype=torch.bool)
-            all_padded_weights = torch.zeros((len(all_loss_weights), max_len), dtype=torch.bool)
             mask = torch.zeros((len(all_job_representation), max_len), dtype=torch.bool)
             for i, (x, y) in enumerate(zip(all_job_representation, all_labels)):
                 all_reps[i, :x.shape[0], :] = x
                 all_padded_labels[i, :y.shape[0]] = y
-                all_padded_weights[i, :y.shape[0]] = all_loss_weights[i] + 1
                 mask[i, :x.shape[0]] = True
             # print(f'all_reps {all_reps.shape}')
             # print(f'all_padded_labels {all_padded_labels.shape}')
             # print(f'mask {mask.shape}')
-            dataset = TensorDataset(all_reps, all_padded_labels, all_padded_weights, mask)
+            #print(f'create dataset')
+            dataset = TensorDataset(all_reps, all_padded_labels, mask)
+            #print(f'create dataloader')
             dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
+        print(f'now training')
         number_training_step = 20
         # criterion multi label cross entropy, higher weight for positive label
-        criterion = nn.BCEWithLogitsLoss(reduction='none')
-        # criterion = nn.MSELoss(reduction='none')
+        criterion = nn.MSELoss(reduction='none')
         for epoch in range(number_training_step):
-            acc = 0
             losses = 0
-            total_precision = 0
-            total_recall = 0
             iter = 0
-            total_tp = 0
-            total_fp = 0
-            total_fn = 0
-            total_tn = 0
+            losses = 0
             for batch in dataloader:
                 self.optimizer.zero_grad()
-                reps, labels, mask, weight_loss = batch
-                output = self.ex_nn(reps).squeeze(2)
+                reps, labels, mask = batch
+                output = F.softmax(self.ex_nn(reps), dim=1).squeeze(2)
                 loss = criterion(output, labels.float())
-                loss = (loss * mask.float() * weight_loss.float()).sum() / mask.float().sum()
+                loss = (loss * mask.float()).sum() / mask.float().sum()
                 loss.backward()
                 self.optimizer.step()
                 iter += 1
-                with torch.no_grad():
-                    # compute the accuracy
-                    pred = torch.sigmoid(output) > 0.5
-                    acc += (pred[mask] == labels[mask]).float().sum() / mask.float().sum()
-                    losses += loss.item()
-                    # compute the precision and recall
-                    tp = ((pred[mask] == 1) & (labels[mask] == 1)).float().sum()
-                    fp = ((pred[mask] == 1) & (labels[mask] == 0)).float().sum()
-                    fn = ((pred[mask] == 0) & (labels[mask] == 1)).float().sum()
-                    tn = ((pred[mask] == 0) & (labels[mask] == 0)).float().sum()
-                    total_precision += tp / ((tp + fp) + 1e-8)
-                    total_recall += tp / ((tp + fn) + 1e-8)
-                    total_tp += tp
-                    total_fp += fp
-                    total_fn += fn
-                    total_tn += tn
+                losses += loss.item()
             print(
-                f'epoch {epoch} loss {losses / iter} acc {acc / iter} precision {total_precision / iter} recall {total_recall / iter}')
-            print(f'tp {total_tp / iter} fp {total_fp / iter} fn {total_fn / iter} tn {total_tn / iter}')
+                f'epoch {epoch} loss {losses / iter}')
+            #print(f'tp {total_tp / iter} fp {total_fp / iter} fn {total_fn / iter} tn {total_tn / iter}')
         # save the model
         torch.save(self.ex_nn.state_dict(), 'pretrained.pt')
 
