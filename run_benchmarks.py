@@ -22,7 +22,7 @@ time_limits = [
 ]
 
 weeks = [
-    2,
+    4,
 ]
 
 ref_solver = "greedy_solver:solve_with_greedy"
