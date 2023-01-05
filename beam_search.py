@@ -75,7 +75,7 @@ def beam_search(
     #print(
     #    f"number of jobs to allocates {number_jobs}, total of {number_tasks} tasks to perform on {number_machines} machines"
     #)
-    nb_features = 6
+    nb_features = 7
     best_solution = [float("inf"), None]
     start = time.time()
     i = 0
@@ -203,6 +203,7 @@ def master_iter(
         nb_day_outside_left = torch.zeros(number_jobs, dtype=torch.double)
         nb_coupling_day_left = torch.zeros(number_jobs, dtype=torch.double)
         all_task_length = torch.zeros(number_jobs, dtype=torch.double)
+        total_tasks_length = torch.zeros(number_jobs, dtype=torch.double)
         for job in job_list:
             if len(job.tasks) > 0:
                 job_nb = bijection_job_id[job.id]
@@ -213,6 +214,7 @@ def master_iter(
                 )
                 all_task_length[i] = first_task.length
                 for task_id, task in enumerate(job.tasks):
+                    total_tasks_length[job_nb] += task.length
                     nb_day_left[job_nb] += 1
                     nb_day_left[job_nb] += task.free_days_before
                     nb_day_outside_left[job_nb] += task.free_days_before
@@ -263,6 +265,7 @@ def master_iter(
                             nb_day_outside_left[job_to_allocate_this_step_machine],
                             nb_coupling_day_left[job_to_allocate_this_step_machine],
                             all_task_length[job_to_allocate_this_step_machine],
+                            total_tasks_length[job_to_allocate_this_step_machine],
                             network,
                         )
                         probabilities = F.log_softmax(priority_jobs, dim=0)
@@ -350,6 +353,7 @@ def master_iter(
                                             all_tasks_to_allocate
                                         )
                                     nb_day_left[i] -= len(all_tasks_to_allocate)
+                                    total_tasks_length[i] -= all_task_length[i]
                                     if current_job_op[i] == len(job_object.tasks):
                                         number_finished_job += 1
                                         not_finished_job[i] = False
@@ -417,6 +421,7 @@ def one_pop_iter(
         nb_day_outside_left = torch.zeros(number_jobs, dtype=torch.double)
         nb_coupling_day_left = torch.zeros(number_jobs, dtype=torch.double)
         all_task_length = torch.zeros(number_jobs, dtype=torch.double)
+        total_tasks_length = torch.zeros(number_jobs, dtype=torch.double)
         for job in job_list:
             if len(job.tasks) > 0:
                 job_nb = bijection_job_id[job.id]
@@ -427,6 +432,7 @@ def one_pop_iter(
                 )
                 all_task_length[i] = first_task.length
                 for task_id, task in enumerate(job.tasks):
+                    total_tasks_length[job_nb] += task.length
                     nb_day_left[job_nb] += 1
                     nb_day_left[job_nb] += task.free_days_before
                     nb_day_outside_left[job_nb] += task.free_days_before
@@ -472,6 +478,7 @@ def one_pop_iter(
                             nb_day_outside_left[job_to_allocate_this_step_machine],
                             nb_coupling_day_left[job_to_allocate_this_step_machine],
                             all_task_length[job_to_allocate_this_step_machine],
+                            total_tasks_length[job_to_allocate_this_step_machine],
                             network,
                         )
 
@@ -553,6 +560,7 @@ def one_pop_iter(
                                             all_tasks_to_allocate
                                         )
                                     nb_day_left[i] -= len(all_tasks_to_allocate)
+                                    total_tasks_length[i] -= all_task_length[i]
                                     if current_job_op[i] == len(job_object.tasks):
                                         number_finished_job += 1
                                         not_finished_job[i] = False

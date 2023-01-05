@@ -16,6 +16,7 @@ def _compute_job_priority(
     days_outside,
     coupling_days,
     task_length,
+    total_tasks_length,
     network,
 ):
     with torch.no_grad():
@@ -39,6 +40,9 @@ def _compute_job_priority(
         task_length = (task_length - torch.min(task_length)) / max(
             torch.max(task_length) - torch.min(task_length), 1
         )
+        total_tasks_length = (total_tasks_length - torch.min(total_tasks_length)) / max(
+            torch.max(total_tasks_length) - torch.min(total_tasks_length), 1
+        )
         # view
         nb_day_deadline = nb_day_deadline.view(nb_jobs, 1)
         nb_day_left = nb_day_left.view(nb_jobs, 1)
@@ -46,6 +50,7 @@ def _compute_job_priority(
         coupling_days = coupling_days.view(nb_jobs, 1)
         days_outside = days_outside.view(nb_jobs, 1)
         task_length = task_length.view(nb_jobs, 1)
+        total_tasks_length = total_tasks_length.view(nb_jobs, 1)
         input_tensor = torch.hstack(
             (
                 nb_day_deadline,
@@ -54,6 +59,7 @@ def _compute_job_priority(
                 days_outside,
                 coupling_days,
                 task_length,
+                total_tasks_length,
             )
         )
         score = network(input_tensor)

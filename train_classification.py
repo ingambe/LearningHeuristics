@@ -1,7 +1,3 @@
-from collections import defaultdict
-from math import floor
-from typing import List
-
 import transformers
 
 import torch
@@ -10,7 +6,6 @@ import numpy as np
 
 import collections
 import multiprocessing as mp
-from collections import defaultdict
 from math import floor
 
 from ortools.sat.python import cp_model
@@ -81,8 +76,6 @@ def solve_with_cp_get_result(
                 max_default_weight = max(max_default_weight, job_weights[index_job])
 
     max_end_date = 0
-
-    first_tasks = []
 
     machine_max_end_date = collections.defaultdict(int)
     for job in job_list:
@@ -318,6 +311,7 @@ def compute_input_tensor(
         days_outside,
         coupling_days,
         task_length,
+        total_tasks_length
 ):
     with torch.no_grad():
         nb_jobs = len(nb_day_deadline)
@@ -340,6 +334,9 @@ def compute_input_tensor(
         task_length = (task_length - torch.min(task_length)) / max(
             torch.max(task_length) - torch.min(task_length), 1
         )
+        total_tasks_length = (total_tasks_length - torch.min(total_tasks_length)) / max(
+            torch.max(total_tasks_length) - torch.min(total_tasks_length), 1
+        )
         # view
         nb_day_deadline = nb_day_deadline.view(nb_jobs, 1)
         nb_day_left = nb_day_left.view(nb_jobs, 1)
@@ -347,6 +344,7 @@ def compute_input_tensor(
         coupling_days = coupling_days.view(nb_jobs, 1)
         days_outside = days_outside.view(nb_jobs, 1)
         task_length = task_length.view(nb_jobs, 1)
+        total_tasks_length = total_tasks_length.view(nb_jobs, 1)
         input_tensor = torch.hstack(
             (
                 nb_day_deadline,
@@ -355,6 +353,7 @@ def compute_input_tensor(
                 days_outside,
                 coupling_days,
                 task_length,
+                total_tasks_length,
             )
         )
         return input_tensor
@@ -450,6 +449,7 @@ def one_pop_iter(
         nb_day_outside_left = torch.zeros(number_jobs, dtype=torch.double)
         nb_coupling_day_left = torch.zeros(number_jobs, dtype=torch.double)
         all_task_length = torch.zeros(number_jobs, dtype=torch.double)
+        total_tasks_length = torch.zeros(number_jobs, dtype=torch.double)
         for job in job_list:
             if len(job.tasks) > 0:
                 job_nb = bijection_job_id[job.id]
@@ -460,6 +460,7 @@ def one_pop_iter(
                 )
                 all_task_length[i] = first_task.length
                 for task_id, task in enumerate(job.tasks):
+                    total_tasks_length[job_nb] += task.length
                     nb_day_left[job_nb] += 1
                     nb_day_left[job_nb] += task.free_days_before
                     nb_day_outside_left[job_nb] += task.free_days_before
@@ -508,6 +509,7 @@ def one_pop_iter(
                         nb_day_outside_left[job_to_allocate_this_step_machine],
                         nb_coupling_day_left[job_to_allocate_this_step_machine],
                         all_task_length[job_to_allocate_this_step_machine],
+                        total_tasks_length[job_to_allocate_this_step_machine],
                     )
                     all_job_representation.append(job_representation)
                     order_jobs = days_allocation[day]
@@ -605,6 +607,7 @@ def one_pop_iter(
                                             all_tasks_to_allocate
                                         )
                                     nb_day_left[i] -= len(all_tasks_to_allocate)
+                                    total_tasks_length[i] -= all_task_length[i]
                                     if current_job_op[i] == len(job_object.tasks):
                                         number_finished_job += 1
                                         not_finished_job[i] = False
@@ -659,7 +662,7 @@ def one_pop_iter(
         dataset = TensorDataset(all_reps, all_padded_labels, all_padded_weights, mask)
         dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
-    ex_nn = Network(6, 1)
+    ex_nn = Network(7, 1)
     number_training_step = 200
     # learning rate scheduler warmup
     optimizer = torch.optim.AdamW(ex_nn.parameters(), lr=0.003, betas=(0.9, 0.999), weight_decay=0.01)
