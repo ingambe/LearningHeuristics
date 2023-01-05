@@ -1,7 +1,4 @@
-import os
 from copy import deepcopy
-
-import transformers
 
 import torch
 import torch.nn as nn
@@ -19,6 +16,8 @@ from NetworkES import Network
 from instance_reader import *
 
 from instance_reader import Task, Machine, Job, CapacityManager2, PenaltyManager
+
+import torch.nn.functional as F
 
 
 class TrainNetwork(CpSolverSolutionCallback):
@@ -117,7 +116,6 @@ class TrainNetwork(CpSolverSolutionCallback):
             not_finished_job = torch.ones((self.number_jobs,), dtype=torch.bool)
             all_job_representation = []
             all_labels = []
-            all_loss_weights = []
             while day <= max(day_job.keys()):
                 print(f"day {day}, {number_finished_job} jobs finished total of {self.number_jobs}")
                 to_allocate_this_step = torch.logical_and(
@@ -129,14 +127,11 @@ class TrainNetwork(CpSolverSolutionCallback):
                 for job_nb in job_to_allocate_this_step:
                     job = self.all_jobs[job_nb]
                     task = job.tasks[current_job_op[job_nb]]
-                    if task_day[task.id] >= max(day - 7, 0):
-                        machine_to_allocate[task.machine.id].append(job_nb)
-                        task_to_machine_to_allocate[task.machine.id].append(task.id)
+                    machine_to_allocate[task.machine.id].append(job_nb)
+                    task_to_machine_to_allocate[task.machine.id].append(task.id)
                 for machine_id, machine_job_list in machine_to_allocate.items():
                     job_to_allocate_this_step_machine = torch.tensor(machine_job_list, dtype=torch.long)
-                    job_to_allocate_this_step_machine_copy = job_to_allocate_this_step_machine.clone()
                     if job_to_allocate_this_step_machine.shape[0] > 0:
-                        delay_deadlines = (self.deadlines - day)[job_to_allocate_this_step_machine]
                         #indexes_sort_deadline = torch.argwhere(
                         #    delay_deadlines <= max(delay_deadlines.min(), 0) + 7).view(-1)
                         #job_to_allocate_this_step_machine = job_to_allocate_this_step_machine[indexes_sort_deadline]
@@ -152,34 +147,13 @@ class TrainNetwork(CpSolverSolutionCallback):
                         order_jobs = day_job[day]
                         get_biject_to_allocate = [self.bijection_job_id[x[0]] for x in order_jobs if
                                                   self.bijection_job_id[x[0]] in job_to_allocate_this_step_machine]
-                        # print(f"get_biject_to_allocate {len(get_biject_to_allocate)}")
                         get_biject_to_allocate.sort()
-                        y_to_pred = torch.zeros((job_to_allocate_this_step_machine.shape[0],), dtype=torch.bool)
-                        for idx, job_candidate in enumerate(job_to_allocate_this_step_machine):
-                            if job_candidate.item() in get_biject_to_allocate:
-                                y_to_pred[idx] = True
-                        assert y_to_pred.sum() == len(
-                            get_biject_to_allocate), f'{y_to_pred.sum()} not the same {len(get_biject_to_allocate)}'
-                        # for i, job in enumerate(get_biject_to_allocate):
-                        #    if
-                        # y_to_pred[job_to_allocate_this_step_machine == torch.tensor(get_biject_to_allocate)] = True
-                        all_labels.append(y_to_pred)
-
-                        this_day_machine_loss_weight = []
+                        y_to_pred = torch.zeros((job_to_allocate_this_step_machine.shape[0],), dtype=torch.float)
                         for idx_task, job_day_machine in enumerate(task_to_machine_to_allocate[machine_id]):
-                            this_day_machine_loss_weight.append((task_day[job_day_machine] - day) ** 2)
-                        this_day_machine_loss_weight = torch.tensor(this_day_machine_loss_weight, dtype=torch.double)
-                        all_loss_weights.append(this_day_machine_loss_weight)
-                        assert y_to_pred.shape[0] == this_day_machine_loss_weight.shape[
-                            0], f'{y_to_pred.shape[0]} not the same {this_day_machine_loss_weight.shape[0]}'
-                        # print('-' * 10)
-                        # print(f'shape of labels {y_to_pred.shape}')
-                        # print(f'shape of representation {job_representation.shape}')
-                        # print(f'-' * 10)
-                        get_biject_to_allocate_without_filtering = [self.bijection_job_id[x[0]] for x in order_jobs if
-                                                                    self.bijection_job_id[
-                                                                        x[0]] in job_to_allocate_this_step_machine_copy]
-                        for i in get_biject_to_allocate_without_filtering:
+                            y_to_pred[idx_task] = (task_day[job_day_machine] - day)
+                        y_to_pred = F.softmax(torch.abs((y_to_pred - y_to_pred.min()) - y_to_pred.max()), dim=0)
+                        all_labels.append(y_to_pred)
+                        for i in get_biject_to_allocate:
                             job_object = self.all_jobs[i]
                             # check if compatible
                             # not finished
@@ -276,61 +250,37 @@ class TrainNetwork(CpSolverSolutionCallback):
             max_len = max([x.shape[0] for x in all_job_representation])
             all_reps = torch.zeros((len(all_job_representation), max_len, all_job_representation[0].shape[1]))
             all_padded_labels = torch.zeros((len(all_labels), max_len), dtype=torch.bool)
-            all_padded_weights = torch.zeros((len(all_loss_weights), max_len), dtype=torch.bool)
             mask = torch.zeros((len(all_job_representation), max_len), dtype=torch.bool)
             for i, (x, y) in enumerate(zip(all_job_representation, all_labels)):
                 all_reps[i, :x.shape[0], :] = x
                 all_padded_labels[i, :y.shape[0]] = y
-                all_padded_weights[i, :y.shape[0]] = all_loss_weights[i] + 1
                 mask[i, :x.shape[0]] = True
             # print(f'all_reps {all_reps.shape}')
             # print(f'all_padded_labels {all_padded_labels.shape}')
             # print(f'mask {mask.shape}')
-            dataset = TensorDataset(all_reps, all_padded_labels, all_padded_weights, mask)
+            dataset = TensorDataset(all_reps, all_padded_labels, mask)
             dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
         number_training_step = 20
         # criterion multi label cross entropy, higher weight for positive label
-        criterion = nn.BCEWithLogitsLoss(reduction='none')
-        # criterion = nn.MSELoss(reduction='none')
+        #criterion = nn.MSELoss()
+        criterion = nn.MSELoss(reduction='none')
         for epoch in range(number_training_step):
-            acc = 0
             losses = 0
-            total_precision = 0
-            total_recall = 0
             iter = 0
-            total_tp = 0
-            total_fp = 0
-            total_fn = 0
-            total_tn = 0
             for batch in dataloader:
                 self.optimizer.zero_grad()
-                reps, labels, mask, weight_loss = batch
+                reps, labels, mask = batch
                 output = self.ex_nn(reps).squeeze(2)
                 loss = criterion(output, labels.float())
-                loss = (loss * mask.float() * weight_loss.float()).sum() / mask.float().sum()
+                loss = (loss * mask.float()).sum() / mask.float().sum()
                 loss.backward()
                 self.optimizer.step()
                 iter += 1
                 with torch.no_grad():
-                    # compute the accuracy
-                    pred = torch.sigmoid(output) > 0.5
-                    acc += (pred[mask] == labels[mask]).float().sum() / mask.float().sum()
                     losses += loss.item()
-                    # compute the precision and recall
-                    tp = ((pred[mask] == 1) & (labels[mask] == 1)).float().sum()
-                    fp = ((pred[mask] == 1) & (labels[mask] == 0)).float().sum()
-                    fn = ((pred[mask] == 0) & (labels[mask] == 1)).float().sum()
-                    tn = ((pred[mask] == 0) & (labels[mask] == 0)).float().sum()
-                    total_precision += tp / ((tp + fp) + 1e-8)
-                    total_recall += tp / ((tp + fn) + 1e-8)
-                    total_tp += tp
-                    total_fp += fp
-                    total_fn += fn
-                    total_tn += tn
             print(
-                f'epoch {epoch} loss {losses / iter} acc {acc / iter} precision {total_precision / iter} recall {total_recall / iter}')
-            print(f'tp {total_tp / iter} fp {total_fp / iter} fn {total_fn / iter} tn {total_tn / iter}')
+                f'epoch {epoch} loss {losses / iter}')
         # save the model
         torch.save(self.ex_nn.state_dict(), 'pretrained.pt')
 

@@ -77,12 +77,13 @@ class Network(nn.Module):
         self.ln2 = layer_init(nn.Linear(32, 32))
         self.ln3 = layer_init(nn.Linear(32, output_dim))
         self.activation = nn.Tanh()
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
         x = self.encoder(x) + x
         x = self.activation(self.ln1(x))
         x = self.activation(self.ln2(x))
-        return self.ln3(x)
+        return self.softmax(self.ln3(x))
 
     def get_weights(self):
         return self.parameters_to_vector()
