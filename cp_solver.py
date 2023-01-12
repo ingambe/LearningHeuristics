@@ -341,7 +341,6 @@ def solve_with_cp(
     return dict(machine_days=machine_days, **p)
 
 def check_with_cp(
-    task_starting_date: Dict[Task, int],
     task_list: List[Task],
     machine_list: List[Machine],
     job_list: List[Job],
@@ -422,7 +421,7 @@ def check_with_cp(
             interval_var = model.NewIntervalVar(
                 start_var, duration, end_var, f"interval_{task.original_id}"
             )
-            # model.Add(start_var == task.result_processing_day)
+            model.Add(start_var == task.result_processing_day)
             if warm_start:
                 model.AddHint(start_var, task.result_processing_day)
             taskType = task_type(
@@ -593,11 +592,6 @@ def check_with_cp(
 
     machine_days = defaultdict(lambda: defaultdict(lambda: 0))
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        print(f"We found something {solver.ObjectiveValue()}!")
-        print(f"Weighted sum delay {solver.Value(sum_weighted_delay)}")
-        print(
-            f"Weighted one time penalty {solver.Value(sum_weighted_one_time_penality)}"
-        )
         for job in job_list:
             for task in job.tasks:
                 cp_task = all_tasks[job.id, task.id]
@@ -664,6 +658,7 @@ def check_with_cp(
         ]
     )
     p["obj"] = obj + obj_dv
+    print(f"Objective CP {obj}")
     # assert obj == solver.ObjectiveValue(), f'{obj} computed and {solver.ObjectiveValue()} cp-optimized objectives not equal'
     p["termination_time"] = time() - start
     return dict(machine_days=machine_days, **p)

@@ -142,15 +142,15 @@ def beam_search(
     for job in job_list:
         for task in job.tasks:
             task_id = bijection_task_id[task.id]
-            task.solver_result_processing_day = int(solver_result[task_id])
-            machine_days[task.solver_result_processing_day][
+            task.result_processing_day = int(solver_result[task_id])
+            machine_days[task.result_processing_day][
                 task.machine.id
             ] += task.length
 
     for job in job_list:
         if len(job.tasks) > 0:
             job.solver_delay = max(
-                0, job.tasks[-1].solver_result_processing_day - job.deadline
+                0, job.tasks[-1].result_processing_day - job.deadline
             )
             job.solver_has_delay = 1 if job.solver_delay > 0 else 0
         else:

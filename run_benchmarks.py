@@ -14,6 +14,7 @@ solvers = [
     #'cp_solver:solve_with_cp',
     "beam_search:beam_search",
     #"train_classification:generate_data",
+    'cp_solver:check_with_cp',
 ]
 
 time_limits = [
